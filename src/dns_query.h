@@ -1,27 +1,8 @@
 #pragma once
-#include "hostname.h"
+#include "dns_common.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#define QNAME_MAX_LEN (1ul + HOSTNAME_MAX + 1ul)
-#define NAME_MAX_LEN (1ul + HOSTNAME_MAX + 1ul)
-
-struct dns_header {
-  uint16_t id;
-  uint16_t flags;
-  uint16_t qdcount;
-  uint16_t ancount;
-  uint16_t nscount;
-  uint16_t arcount;
-};
-
-struct dns_question {
-  size_t qname_len;
-  uint8_t qname[QNAME_MAX_LEN];
-  uint16_t qtype;
-  uint16_t qclass;
-};
 
 struct dns_query {
   size_t length;
@@ -30,14 +11,7 @@ struct dns_query {
   const char *host;
 };
 
-struct dns_resource_record {
-  size_t name_len;
-  uint8_t name[QNAME_MAX_LEN];
-  uint16_t type;
-  uint16_t _class;
-  uint32_t ttl;
-  uint16_t rdlength;
-  uint8_t *rdata;
-};
-
-bool dns_query_send(const char *host, uint16_t id);
+bool dns_query_init(struct dns_query *query, uint16_t id, const char *host);
+bool dns_query_send(struct dns_query *query, uint16_t id);
+void dns_query_serialize(const struct dns_query *query, uint8_t *buf);
+void dns_query_print(const struct dns_query *query);

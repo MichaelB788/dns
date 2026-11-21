@@ -10,75 +10,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-static bool dns_query_init(struct dns_query *query, uint16_t id,
-                           const char *host);
-
-static void dns_query_serialize(const struct dns_query *query, uint8_t *buf);
-
-static void dns_query_print(const struct dns_query *query);
-
-bool dns_query_send(const char *host, uint16_t id) {
-  uint8_t buf[65536];
-
-  struct dns_query query;
-  if (!dns_query_init(&query, id, host))
-    return false;
-
-  puts("=== DNS Query ===");
-  dns_query_print(&query);
-
-  puts("Destination: 8.8.8.8:53 (UDP over IPv4)");
-  struct sockaddr_in dest = {.sin_family = AF_INET, .sin_port = htons(53)};
-  inet_pton(AF_INET, "8.8.8.8", &dest.sin_addr);
-
-  bool success = true;
-  int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  if (sock == -1) {
-    perror("Could not create socket");
-    success = false;
-    goto socket_cleanup;
-  }
-  struct timeval timeout = {.tv_sec = 5, .tv_usec = 0};
-  if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) ==
-      -1) {
-    success = false;
-    perror("Could not set receive timeout");
-    goto socket_cleanup;
-  }
-  puts("Socket created");
-
-  dns_query_serialize(&query, buf);
-  int attempt = 1;
-  for (; attempt <= 3; ++attempt) {
-    if (sendto(sock, buf, query.length, 0, (struct sockaddr *)&dest,
-               sizeof dest) == -1) {
-      perror("Failed to send packet");
-      continue;
-    }
-    printf("Attempt %d/3: sent %zu bytes from local port %d\n", attempt,
-           query.length, ntohs(dest.sin_port));
-
-    if (recvfrom(sock, buf, sizeof buf, 0, NULL, NULL) == -1) {
-      perror("Did not receive answer");
-      continue;
-    }
-
-    printf("Attempt %d/3: received valid reply\n", attempt);
-    break;
-  }
-  if (attempt > 3) {
-    perror("Failure: no valid reply after 3 transmissions");
-    success = false;
-  }
-
-socket_cleanup:
-  shutdown(sock, SHUT_RDWR);
-  close(sock);
-  puts("Socket closed");
-
-  return success;
-}
-
 bool dns_query_init(struct dns_query *query, uint16_t id, const char *host) {
   if (!validate_hostname(host))
     return false;
@@ -113,6 +44,65 @@ bool dns_query_init(struct dns_query *query, uint16_t id, const char *host) {
   query->length = sizeof(struct dns_header) + query->question.qname_len + 4;
 
   return true;
+}
+
+bool dns_query_send(struct dns_query *query, uint16_t id) {
+  puts("=== DNS Query ===");
+  dns_query_print(query);
+
+  puts("Destination: 8.8.8.8:53 (UDP over IPv4)");
+  struct sockaddr_in dest = {.sin_family = AF_INET, .sin_port = htons(53)};
+  inet_pton(AF_INET, "8.8.8.8", &dest.sin_addr);
+
+  bool success = true;
+  int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sock == -1) {
+    perror("Could not create socket");
+    success = false;
+    goto socket_cleanup;
+  }
+  struct timeval timeout = {.tv_sec = 5, .tv_usec = 0};
+  if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) ==
+      -1) {
+    success = false;
+    perror("Could not set receive timeout");
+    goto socket_cleanup;
+  }
+  puts("Socket created");
+
+  uint8_t query_buf[DNS_QUERY_MAX_LEN] = {0};
+  dns_query_serialize(query, query_buf);
+
+  uint8_t rcv_buf[65536] = {0};
+  int attempt = 1;
+  for (; attempt <= 3; ++attempt) {
+    if (sendto(sock, query_buf, query->length, 0, (struct sockaddr *)&dest,
+               sizeof dest) == -1) {
+      perror("Failed to send packet");
+      continue;
+    }
+    printf("Attempt %d/3: sent %zu bytes from local port %d\n", attempt,
+           query->length, ntohs(dest.sin_port));
+
+    if (recvfrom(sock, rcv_buf, sizeof rcv_buf, 0, NULL, NULL) == -1) {
+      perror("Did not receive answer");
+      continue;
+    }
+
+    printf("Attempt %d/3: received valid reply\n", attempt);
+    break;
+  }
+  if (attempt > 3) {
+    perror("Failure: no valid reply after 3 transmissions");
+    success = false;
+  }
+
+socket_cleanup:
+  shutdown(sock, SHUT_RDWR);
+  close(sock);
+  puts("Socket closed");
+
+  return success;
 }
 
 void dns_query_serialize(const struct dns_query *query, uint8_t *buf) {

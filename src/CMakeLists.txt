@@ -2,6 +2,7 @@
 set(SOURCE_LIB ${CMAKE_PROJECT_NAME}Source)
 add_library(${SOURCE_LIB}
   dns_query.c
+  dns_reply.c
   hostname.c
 )
 

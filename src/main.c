@@ -14,7 +14,11 @@ int main(int argc, const char **argv) {
 
   const uint16_t id = getpid();
 
-  if (dns_query_send(argv[1], id)) {
+  struct dns_query query;
+  if (!dns_query_init(&query, id, argv[1]))
+    return false;
+
+  if (dns_query_send(&query, id)) {
     puts("Success");
     return 0;
   } else {
