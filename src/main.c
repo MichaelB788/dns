@@ -14,5 +14,11 @@ int main(int argc, const char **argv) {
 
   const uint16_t id = getpid();
 
-  dns_query_send(argv[1], id);
+  if (dns_query_send(argv[1], id)) {
+    puts("Success");
+    return 0;
+  } else {
+    puts("Failure");
+    return 1;
+  }
 }
