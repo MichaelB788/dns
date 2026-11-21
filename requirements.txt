@@ -1,0 +1,54 @@
+Required behavior
+
+1. Run as client <hostname>, with exactly one argument. A valid hostname has
+1–253 characters and no trailing dot. Its labels are 1–63 characters of ASCII
+letters, digits, and hyphens, and no label starts or ends with a hyphen. For a
+missing, extra, or invalid argument, print an error and exit with a nonzero status
+without sending anything. Send one A query at a time with recursion desired
+(RD=1). Caching, iterative resolution, internationalized names, EDNS, DNSSEC,
+and TCP fallback are outside scope.
+
+2. Each attempt has a 5-second deadline that starts when the query is sent.
+Datagrams you ignore (see 3) do not restart the deadline; keep waiting only for
+the time remaining. When the deadline passes, resend the identical query (same
+ID). At most three transmissions in total. After the third deadline passes, report
+failure. If the OS reports the resolver unreachable (e.g., ECONNREFUSED on a
+connected UDP socket), count that attempt as failed and go on to the next
+transmission. Close the socket on every exit path.
+
+3. Ignore any datagram, and keep waiting, unless it passes all of these checks: it
+comes from the resolver address on port 53; it is at least 12 bytes; its ID matches;
+QR=1; QDCOUNT=1; and its question matches yours (same QNAME, compared
+case-insensitively, QTYPE=1, QCLASS=1). An ignored datagram is never treated
+as success. Once a reply passes, it is final; do not retransmit. Print the full reply
+(see 5), then check for these conditions:
+● RCODE ≠ 0: report it by number and name (1 FORMERR, 2 SERVFAIL, 3
+NXDOMAIN, 4 NOTIMP, 5 REFUSED).
+● TC=1: report truncation.
+● No A records in the answer section, even after following any CNAMEs: report
+“no A records.”
+If any of these conditions hold, exit nonzero. Exit 0 only when the reply
+contains at least one A record.
+
+4. Use all four section counts to traverse the response. Decode all IN A and CNAME
+records, including multiple answers and aliases. For other types, print TYPE,
+RDLENGTH, and the RDATA in hex, then skip exactly RDLENGTH bytes. Every
+read must stay inside the received datagram. Reject a reply if any of these occur:
+● a read past the end of the datagram;
+● a label-length byte whose top two bits are 01 or 10;
+● a compression pointer that does not point to an earlier offset than the
+pointer’s own position;
+● a decoded name longer than 255 bytes;
+● an A record whose RDLENGTH ≠ 4;
+● bytes left over after the last counted record.
+A rejected reply is a failure. Print what was parsed so far, plus the error and
+the byte offset where it occurred, then exit nonzero. Do not wait for another reply.
+
+5. Before sending, print the query header, the question, and the full query in hex.
+Print the destination, each attempt number, and whether that attempt timed out or
+got a reply, then the final outcome. For the reply header, print ID, QR, OPCODE,
+AA, TC, RD, RA, RCODE, and the four counts, each labeled. Print the question
+fields. Then print every record with its section and record number (e.g., Answer
+2), NAME, TYPE, CLASS, TTL, RDLENGTH, and RDATA. Print names as dotted
+text and IPv4 addresses as dotted-quad. Print other numeric values in hex; you
+may add the decimal value in parentheses, e.g., TTL: 0x0000012c (300).
